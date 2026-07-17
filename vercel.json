@@ -1,0 +1,12 @@
+{
+  "build": {
+    "env": {
+      "CI": "false"
+    }
+  },
+  "buildCommand": "cd revspeed && npm install && npm run build",
+  "outputDirectory": "revspeed/dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
