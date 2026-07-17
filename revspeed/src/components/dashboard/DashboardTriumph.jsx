@@ -198,7 +198,7 @@ function RelancerModal({ vendeur, onClose }) {
 
 // ── ANOMALIES & URGENCES ─────────────────────────────────────────────────────
 
-function AnomaliesBlock({ anomalies }) {
+function AnomaliesBlock({ anomalies, shareAnchor, setShareAnchor }) {
   const count   = anomalies.length
   const isAlert = count > 0
 
@@ -420,7 +420,7 @@ function PipelineRow({ stage, active, onClick, total }) {
 
 // ── PREVIEW LEADS FILTRÉS ────────────────────────────────────────────────────
 
-function FilteredLeadsPreview({ filter, leads, onClear }) {
+function FilteredLeadsPreview({ filter, leads, onClear, shareAnchor, setShareAnchor }) {
   const filtered = leads.filter(l => l.status === filter)
   const label    = STATUS_LABELS[filter] ?? filter
   const style    = COLUMN_STYLES[filter]
@@ -555,7 +555,9 @@ export default function Dashboard({ onFilterPipeline }) {
     const STATUTS_FERMES = [STATUSES.VENTE_CONCLUE, STATUSES.PERDU, STATUSES.ARCHIVE]
     const anomalies = active.filter(l => {
       const lastTouch = l.updatedAt ?? l.createdAt ?? 0
-      return (ts - lastTouch) > H24 && !STATUTS_FERMES.includes(l.status)
+      // Ne signaler que les leads qui ont été assignés à un vendeur
+      // (les imports Facebook non encore traités ne doivent pas être des anomalies)
+      return l.vendeur && (ts - lastTouch) > H24 && !STATUTS_FERMES.includes(l.status)
     })
 
     const trends = {
@@ -650,7 +652,7 @@ export default function Dashboard({ onFilterPipeline }) {
       {/* ════════════════════════════════════════════════════════════════════ */}
       {/* ANOMALIES & URGENCES                                               */}
       {/* ════════════════════════════════════════════════════════════════════ */}
-      <AnomaliesBlock anomalies={metrics.anomalies} />
+      <AnomaliesBlock anomalies={metrics.anomalies} shareAnchor={shareAnchor} setShareAnchor={setShareAnchor} />
 
       {/* ════════════════════════════════════════════════════════════════════ */}
       {/* KPI CARDS                                                          */}
@@ -748,7 +750,8 @@ export default function Dashboard({ onFilterPipeline }) {
             filter={pipelineFilter}
             leads={leadsInRange}
             onClear={() => { setPipelineFilter(null); onFilterPipeline?.(null) }}
-
+            shareAnchor={shareAnchor}
+            setShareAnchor={setShareAnchor}
           />
         )}
       </section>
