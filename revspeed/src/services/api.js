@@ -2,80 +2,40 @@
  * RevSpeed — Service API centralisé
  * ──────────────────────────────────────────────────────────────────────────
  * Mode automatique :
- *   → SUPABASE  si VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY sont définis
- *   → localStorage  sinon (dev / démo sans backend)
+ *   → SUPABASE    si VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY sont définis
+ *   → localStorage sinon (dev / démo sans backend)
  *
- * ── API publique ──────────────────────────────────────────────────────────
- *   getLeads()              → Promise<Lead[]>
- *   saveLeads(leads)        → Promise<Lead[]>          bulk upsert
- *   saveLead(lead)          → Promise<Lead>            upsert (id > email > tél)
- *   updateLead(id, updates) → Promise<Lead|null>       patch partiel
- *   deleteLead(id)          → Promise<void>
- *   archiveLead(id)         → Promise<Lead|null>
- *   clearAll()              → Promise<void>
- *
- * ── Schéma Lead (champs supportés) ───────────────────────────────────────
- *   Identité       : id, createdAt, updatedAt
- *   Contact        : nom, tel, email, codePostal
- *   Pipeline       : status, priorité, vendeur
- *   Qualification  : qualification, notes, issueAppel
- *   Rendez-vous    : rdvDate, rdvTime, rdvType, rdvDuration
- *   Archivage      : archivedFrom, archivedAt
- *   Facebook       : facebookId, leadStatus, adName, campaignName…
+ * Table Supabase : "Leads" (colonnes réelles Facebook Lead Ads + CRM)
  * ──────────────────────────────────────────────────────────────────────────
  */
 
 import { supabase, SUPABASE_ENABLED } from './supabase'
 
-// ── Clés localStorage (fallback) ────────────────────────────────────────────
-const LS_KEY      = 'revspeed_leads_v2'
+// ── localStorage (fallback) ──────────────────────────────────────────────────
+const LS_KEY      = '***'
 const LEGACY_KEYS = ['revspeed_leads', 'revspeed_leads_v1']
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MAPPING  App (camelCase) ↔ Supabase (snake_case)
+// MAPPING  App ↔ Supabase "Leads"
+// Les colonnes Facebook ont des préfixes : p: (phone) et z: (postcode)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Convertit un lead de l'app vers le format colonne Supabase */
-function toRow(lead) {
-  return {
-    id:             lead.id                                          ?? undefined,
-    first_name:     lead.nom                                         ?? null,
-    phone:          lead.tel                                         ?? null,
-    email:          lead.email                                       ?? null,
-    code_postal:    lead.codePostal                                  ?? null,
-    status:         lead.status                                      ?? 'prospect',
-    priorite:       lead.priorité                                    ?? 'moyenne',
-    vendeur:        lead.vendeur                                     ?? null,
-    vous_souhaitez: lead.qualification                               ?? null,
-    notes:          lead.notes                                       ?? null,
-    issue_appel:    lead.issueAppel                                  ?? null,
-    rdv_date:       lead.rdvDate      || null,
-    rdv_time:       lead.rdvTime      || null,
-    rdv_type:       lead.rdvType      || null,
-    rdv_duration:   lead.rdvDuration  ? parseInt(lead.rdvDuration)  : null,
-    archived_from:  lead.archivedFrom ?? null,
-    archived_at:    lead.archivedAt   ? new Date(lead.archivedAt).toISOString() : null,
-    created_at:     lead.createdAt    ? new Date(lead.createdAt).toISOString()  : undefined,
-    // Champs Facebook (si présents)
-    facebook_id:    lead.facebookId   ?? null,
-    lead_status:    lead.leadStatus   ?? null,
-    ad_name:        lead.adName       ?? null,
-    campaign_name:  lead.campaignName ?? null,
-  }
-}
-
-/** Convertit une ligne Supabase vers le format lead de l'app */
+/** Supabase row → objet lead utilisé par l'app */
 function fromRow(row) {
+  const phone    = (row.phone_number ?? '').replace(/^p:/, '')
+  const postCode = (row.post_code    ?? '').replace(/^z:/, '')
+  const gamme    = row['quelle_gamme_triumph_vous_intéresse_?'] ?? ''
+
   return {
-    id:            row.id,
-    nom:           row.first_name    ?? '',
-    tel:           row.phone         ?? '',
+    id:            row.id            ?? '',
+    nom:           row.full_name     ?? '',
+    tel:           phone,
     email:         row.email         ?? '',
-    codePostal:    row.code_postal   ?? '',
+    codePostal:    postCode,
     status:        row.status        ?? 'prospect',
     priorité:      row.priorite      ?? 'moyenne',
     vendeur:       row.vendeur       ?? '',
-    qualification: row.vous_souhaitez ?? '',
+    qualification: row.qualification ?? gamme,
     notes:         row.notes         ?? '',
     issueAppel:    row.issue_appel   ?? '',
     rdvDate:       row.rdv_date      ?? '',
@@ -84,27 +44,59 @@ function fromRow(row) {
     rdvDuration:   row.rdv_duration  != null ? String(row.rdv_duration) : '',
     archivedFrom:  row.archived_from ?? null,
     archivedAt:    row.archived_at   ? new Date(row.archived_at).getTime()  : null,
-    createdAt:     row.created_at    ? new Date(row.created_at).getTime()   : null,
+    createdAt:     row.created_time  ? new Date(row.created_time).getTime()
+                 : row.created_at   ? new Date(row.created_at).getTime()   : null,
     updatedAt:     row.updated_at    ? new Date(row.updated_at).getTime()   : null,
-    facebookId:    row.facebook_id   ?? null,
     leadStatus:    row.lead_status   ?? null,
     adName:        row.ad_name       ?? null,
     campaignName:  row.campaign_name ?? null,
+    gamme,
   }
 }
 
+/** Objet lead → Supabase row (uniquement les colonnes CRM modifiables) */
+function toRow(lead) {
+  const row = {
+    id:            lead.id || crypto.randomUUID(),
+    full_name:     lead.nom          ?? null,
+    phone_number:  lead.tel          ?? null,
+    email:         lead.email        ?? null,
+    post_code:     lead.codePostal   ?? null,
+    lead_status:   lead.leadStatus   ?? 'CREATED',
+    status:        lead.status       ?? 'prospect',
+    priorite:      lead.priorité     ?? 'moyenne',
+    vendeur:       lead.vendeur      ?? null,
+    qualification: lead.qualification ?? null,
+    notes:         lead.notes        ?? null,
+    issue_appel:   lead.issueAppel   ?? null,
+    rdv_date:      lead.rdvDate      || null,
+    rdv_time:      lead.rdvTime      || null,
+    rdv_type:      lead.rdvType      || null,
+    rdv_duration:  lead.rdvDuration  ? parseInt(lead.rdvDuration) : null,
+    archived_from: lead.archivedFrom ?? null,
+    archived_at:   lead.archivedAt   ? new Date(lead.archivedAt).toISOString() : null,
+  }
+  return row
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// HELPERS INTERNES
+// HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function isToday(dateInput) {
   if (!dateInput) return false
   const d = new Date(dateInput), t = new Date()
-  return d.getDate() === t.getDate() && d.getMonth() === t.getMonth() && d.getFullYear() === t.getFullYear()
+  return d.getDate() === t.getDate() &&
+         d.getMonth() === t.getMonth() &&
+         d.getFullYear() === t.getFullYear()
 }
 
-// ── localStorage ─────────────────────────────────────────────────────────────
+function dispatch(action) {
+  if (typeof window !== 'undefined')
+    window.dispatchEvent(new CustomEvent('leadsUpdated', { detail: { action, timestamp: Date.now() } }))
+}
 
+// ── localStorage helpers ─────────────────────────────────────────────────────
 function lsRead() {
   let raw = localStorage.getItem(LS_KEY)
   if (!raw) {
@@ -113,62 +105,44 @@ function lsRead() {
       if (raw) { localStorage.setItem(LS_KEY, raw); LEGACY_KEYS.forEach(lk => localStorage.removeItem(lk)); break }
     }
   }
-  if (!raw) return null
-  try { return JSON.parse(raw) } catch { return null }
+  try { return raw ? JSON.parse(raw) : null } catch { return null }
 }
-
 function lsWrite(leads) { localStorage.setItem(LS_KEY, JSON.stringify(leads)) }
 
-// ── Dispatch événement React (intra-onglet) ───────────────────────────────────
-
-function dispatch(action) {
-  if (typeof window === 'undefined') return
-  window.dispatchEvent(new CustomEvent('leadsUpdated', { detail: { action, timestamp: Date.now() } }))
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// MODE SUPABASE
+// BACKEND SUPABASE
 // ─────────────────────────────────────────────────────────────────────────────
-
 const sb = {
 
   async getLeads(filter = null) {
-    console.log('[Supabase] 📥 getLeads — requête en cours…')
-    let query = supabase.from('leads').select('*').order('created_at', { ascending: false })
+    console.log('[Supabase] 📥 getLeads…')
+    let q = supabase.from('Leads').select('*').order('created_time', { ascending: false })
     if (filter === 'today') {
       const today = new Date().toISOString().split('T')[0]
-      query = query.gte('created_at', today + 'T00:00:00').lte('created_at', today + 'T23:59:59')
+      q = q.gte('created_time', today + 'T00:00:00').lte('created_time', today + 'T23:59:59')
     }
-    const { data, error } = await query
-    if (error) { console.error('[Supabase] ❌ getLeads erreur:', error.message); return [] }
-    const leads = data.map(fromRow)
-    console.log(`[Supabase] ✅ getLeads → ${leads.length} lead(s) reçu(s)`)
+    const { data, error } = await q
+    if (error) { console.error('[Supabase] ❌ getLeads:', error.message); return [] }
+    const leads = (data ?? []).map(fromRow)
+    console.log(`[Supabase] ✅ getLeads → ${leads.length} leads`)
     return leads
   },
 
   async saveLeads(leads) {
-    console.log(`[Supabase] 📤 saveLeads — upsert de ${leads.length} lead(s)…`)
+    // bulk upsert utilisé uniquement par useLeads auto-persist
+    // → on évite le dispatch pour ne pas créer de boucle
     const rows = leads.map(toRow)
-    const { data, error } = await supabase.from('leads').upsert(rows, { onConflict: 'id' }).select()
-    if (error) { console.error('[Supabase] ❌ saveLeads erreur:', error.message); return leads }
-    console.log(`[Supabase] ✅ saveLeads → ${data.length} lead(s) sauvegardé(s)`)
-    return data.map(fromRow)
+    const { error } = await supabase.from('Leads').upsert(rows, { onConflict: 'id' })
+    if (error) console.error('[Supabase] ❌ saveLeads:', error.message)
+    return leads
   },
 
   async saveLead(lead) {
     console.log('[Supabase] 📤 saveLead —', lead.nom || lead.id)
     const row = toRow(lead)
-
-    // Si pas d'id → insert
-    if (!row.id) delete row.id
-
     const { data, error } = await supabase
-      .from('leads')
-      .upsert(row, { onConflict: 'id' })
-      .select()
-      .single()
-
-    if (error) { console.error('[Supabase] ❌ saveLead erreur:', error.message); return { lead, merged: false } }
+      .from('Leads').upsert(row, { onConflict: 'id' }).select().single()
+    if (error) { console.error('[Supabase] ❌ saveLead:', error.message); return { lead, merged: false } }
     const saved = fromRow(data)
     console.log('[Supabase] ✅ saveLead → id:', saved.id)
     dispatch('saveLead')
@@ -176,16 +150,12 @@ const sb = {
   },
 
   async updateLead(leadId, updates) {
-    console.log('[Supabase] ✏️  updateLead —', leadId, Object.keys(updates))
-    const row = toRow({ ...updates, id: leadId })
-    delete row.id  // ne pas écraser l'id via la colonne
+    console.log('[Supabase] ✏️ updateLead —', leadId)
+    const partial = toRow({ ...updates, id: leadId })
+    delete partial.id
     const { data, error } = await supabase
-      .from('leads')
-      .update(row)
-      .eq('id', leadId)
-      .select()
-      .single()
-    if (error) { console.error('[Supabase] ❌ updateLead erreur:', error.message); return null }
+      .from('Leads').update(partial).eq('id', leadId).select().single()
+    if (error) { console.error('[Supabase] ❌ updateLead:', error.message); return null }
     const updated = fromRow(data)
     console.log('[Supabase] ✅ updateLead → ok')
     dispatch('updateLead')
@@ -194,53 +164,39 @@ const sb = {
 
   async archiveLead(leadId) {
     console.log('[Supabase] 📦 archiveLead —', leadId)
-    const { data: current } = await supabase.from('leads').select('status').eq('id', leadId).single()
-    const { data, error } = await supabase
-      .from('leads')
-      .update({
-        status:        'archivé',
-        archived_from: current?.status ?? null,
-        archived_at:   new Date().toISOString(),
-      })
-      .eq('id', leadId)
-      .select()
-      .single()
-    if (error) { console.error('[Supabase] ❌ archiveLead erreur:', error.message); return null }
+    const { data: cur } = await supabase.from('Leads').select('status').eq('id', leadId).single()
+    const { data, error } = await supabase.from('Leads')
+      .update({ status: 'archivé', archived_from: cur?.status ?? null, archived_at: new Date().toISOString() })
+      .eq('id', leadId).select().single()
+    if (error) { console.error('[Supabase] ❌ archiveLead:', error.message); return null }
     console.log('[Supabase] ✅ archiveLead → ok')
     dispatch('archiveLead')
     return fromRow(data)
   },
 
   async deleteLead(leadId) {
-    console.log('[Supabase] 🗑️  deleteLead —', leadId)
-    const { error } = await supabase.from('leads').delete().eq('id', leadId)
-    if (error) { console.error('[Supabase] ❌ deleteLead erreur:', error.message); return }
+    console.log('[Supabase] 🗑️ deleteLead —', leadId)
+    const { error } = await supabase.from('Leads').delete().eq('id', leadId)
+    if (error) { console.error('[Supabase] ❌ deleteLead:', error.message); return }
     console.log('[Supabase] ✅ deleteLead → ok')
     dispatch('deleteLead')
   },
 
   async clearAll() {
-    console.warn('[Supabase] ⚠️  clearAll — suppression de tous les leads!')
-    const { error } = await supabase.from('leads').delete().neq('id', '00000000-0000-0000-0000-000000000000')
-    if (error) console.error('[Supabase] ❌ clearAll erreur:', error.message)
-    else console.log('[Supabase] ✅ clearAll → ok')
+    console.warn('[Supabase] ⚠️ clearAll!')
+    await supabase.from('Leads').delete().neq('id', 'none')
   },
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MODE LOCALSTORAGE (fallback)
+// BACKEND LOCALSTORAGE (fallback sans Supabase)
 // ─────────────────────────────────────────────────────────────────────────────
-
 const ls = {
-
   async getLeads(filter = null) {
     const leads = lsRead() ?? []
-    if (filter === 'today') return leads.filter(l => isToday(l.createdAt))
-    return leads
+    return filter === 'today' ? leads.filter(l => isToday(l.createdAt)) : leads
   },
-
   async saveLeads(leads) { lsWrite(leads); return leads },
-
   async saveLead(lead) {
     const current = lsRead() ?? []
     let idx = lead.id ? current.findIndex(l => l.id === lead.id) : -1
@@ -261,7 +217,6 @@ const ls = {
     dispatch('saveLead')
     return { lead: saved, merged }
   },
-
   async updateLead(leadId, updates) {
     const current = lsRead() ?? []
     const idx = current.findIndex(l => l.id === leadId)
@@ -271,7 +226,6 @@ const ls = {
     dispatch('updateLead')
     return current[idx]
   },
-
   async archiveLead(leadId) {
     const current = lsRead() ?? []
     const idx = current.findIndex(l => l.id === leadId)
@@ -281,13 +235,10 @@ const ls = {
     dispatch('archiveLead')
     return current[idx]
   },
-
   async deleteLead(leadId) {
-    const current = lsRead() ?? []
-    lsWrite(current.filter(l => l.id !== leadId))
+    lsWrite((lsRead() ?? []).filter(l => l.id !== leadId))
     dispatch('deleteLead')
   },
-
   async clearAll() {
     localStorage.removeItem(LS_KEY)
     LEGACY_KEYS.forEach(k => localStorage.removeItem(k))
@@ -295,13 +246,12 @@ const ls = {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// EXPORT : sélection automatique du backend
+// EXPORT — sélection automatique du backend
 // ─────────────────────────────────────────────────────────────────────────────
-
 export const api = SUPABASE_ENABLED ? sb : ls
 
 console.info(
   SUPABASE_ENABLED
-    ? '[RevSpeed API] 🟢 Backend : Supabase'
-    : '[RevSpeed API] 🟡 Backend : localStorage (définir VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY pour activer Supabase)'
+    ? '[RevSpeed] 🟢 Supabase activé'
+    : '[RevSpeed] 🟡 Mode localStorage (ajouter VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY pour activer Supabase)'
 )
