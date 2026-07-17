@@ -141,23 +141,16 @@ export const api = {
         return mergeWithCrm(base, existing ?? null)
       })
 
-      // Conserver les leads créés directement dans le CRM (non Facebook)
-      const supabaseIds  = new Set((data ?? []).map(r => r.id))
-      const crmOnlyLeads = existing.filter(l => !supabaseIds.has(l.id))
-
-      const all = [...supabaseLeads, ...crmOnlyLeads]
-
+      // ⚠️ On remplace le localStorage par les leads Supabase uniquement
+      // (évite de garder les données de démo du fichier JSON)
       if (newCount > 0) console.log(`[Supabase] 🆕 ${newCount} nouveau(x) lead(s) Facebook importé(s)`)
-      console.log(`[Supabase] ✅ ${all.length} leads au total (${supabaseLeads.length} Supabase + ${crmOnlyLeads.length} CRM local)`)
+      console.log(`[Supabase] ✅ ${supabaseLeads.length} leads depuis Supabase`)
 
-      // Filtrage par date si demandé
-      const result = filter === 'today'
-        ? all.filter(l => isToday(l.createdAt))
-        : all
+      lsWrite(supabaseLeads)
 
-      // Sauvegarder la liste fusionnée en localStorage
-      lsWrite(all)
-      return result
+      return filter === 'today'
+        ? supabaseLeads.filter(l => isToday(l.createdAt))
+        : supabaseLeads
     }
 
     // Mode localStorage pur
