@@ -1,10 +1,5 @@
 /**
  * RevSpeed — Client Supabase
- * ──────────────────────────────────────────────────────────────
- * Variables d'environnement requises (Vercel + fichier .env local) :
- *   VITE_SUPABASE_URL=https://ruvudxuecygqzpjladsu.supabase.co
- *   VITE_SUPABASE_ANON_KEY=eyJhbG…
- * ──────────────────────────────────────────────────────────────
  */
 import { createClient } from '@supabase/supabase-js'
 
@@ -21,5 +16,5 @@ export const supabase = SUPABASE_ENABLED
 if (SUPABASE_ENABLED) {
   console.info('[Supabase] ✅ Connecté →', SUPABASE_URL)
 } else {
-  console.warn('[Supabase] ⚠️ Clés manquantes — mode localStorage')
+  console.warn('[Supabase] ⚠️ Clés VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY manquantes')
 }
