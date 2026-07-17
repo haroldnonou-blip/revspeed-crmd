@@ -1,4 +1,33 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, Component } from 'react'
+
+// ── Error Boundary — évite l'écran blanc silencieux ─────────────────────────
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null } }
+  static getDerivedStateFromError(err) { return { error: err } }
+  componentDidCatch(err, info) { console.error('[RevSpeed] Erreur render:', err, info) }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex items-center justify-center min-h-screen bg-slate-100 p-6">
+          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center space-y-4">
+            <div className="text-5xl">🛠️</div>
+            <h2 className="text-xl font-black text-slate-800">Oups, une erreur s'est produite</h2>
+            <pre className="text-xs text-red-500 bg-red-50 rounded-xl p-3 text-left overflow-auto max-h-40">
+              {this.state.error.message}
+            </pre>
+            <button
+              onClick={() => { localStorage.clear(); window.location.reload() }}
+              className="px-6 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-700 transition-colors"
+            >
+              🔄 Réinitialiser et recharger
+            </button>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 import { useLeads } from './hooks/useLeads'
 import { api } from './services/api'
 import { exportLeadsToCSV } from './utils/csvExport'
@@ -124,6 +153,7 @@ export default function App() {
   }
 
   return (
+    <ErrorBoundary>
     <div className="min-h-screen bg-slate-100 flex flex-col">
 
       {/* ─── HEADER ─────────────────────────────────────────────────────── */}
@@ -290,6 +320,7 @@ export default function App() {
       </footer>
 
     </div>
+    </ErrorBoundary>
   )
 }
 

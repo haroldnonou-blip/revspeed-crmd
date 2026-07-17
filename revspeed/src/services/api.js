@@ -24,30 +24,42 @@ const LEGACY_KEYS = ['revspeed_leads', 'revspeed_leads_v1']
 // ─────────────────────────────────────────────────────────────────────────────
 
 function fromRow(row) {
+  if (!row || typeof row !== 'object') return null
+
   // Nettoyer les préfixes Facebook : p: (téléphone), z: (code postal)
-  const tel      = (row.phone_number ?? '').replace(/^p:/, '')
-  const cp       = (row.post_code    ?? '').replace(/^z:/, '')
-  const gamme    = row['quelle_gamme_triumph_vous_intéresse_?'] ?? ''
+  const tel   = String(row.phone_number ?? '').replace(/^p:/, '').trim()
+  const cp    = String(row.post_code    ?? '').replace(/^z:/, '').trim()
+
+  // La colonne gamme peut avoir différents noms selon la version de la table
+  const gamme = String(
+    row['quelle_gamme_triumph_vous_intéresse_?'] ??
+    row['quelle_gamme_triumph_vous_intéresse_?'] ??
+    row.gamme ?? ''
+  ).trim()
+
+  // Sécuriser createdAt
+  let createdAt = Date.now()
+  try {
+    if (row.created_time) createdAt = new Date(row.created_time).getTime()
+    else if (row.created_at) createdAt = new Date(row.created_at).getTime()
+  } catch (_) {}
 
   return {
-    // Identité (depuis Supabase)
-    id:            row.id            ?? crypto.randomUUID(),
-    nom:           row.full_name     ?? '',
+    id:            String(row.id ?? crypto.randomUUID()),
+    nom:           String(row.full_name ?? '').trim(),
     tel,
-    email:         row.email         ?? '',
+    email:         String(row.email ?? '').trim(),
     codePostal:    cp,
-    createdAt:     row.created_time  ? new Date(row.created_time).getTime()
-                 : row.created_at   ? new Date(row.created_at).getTime() : Date.now(),
-    // Champs Facebook (info supplémentaire)
+    createdAt,
     leadStatus:    row.lead_status   ?? null,
     adName:        row.ad_name       ?? null,
     campaignName:  row.campaign_name ?? null,
     gamme,
-    // Champs CRM — valeurs par défaut (seront écrasées par l'état localStorage)
+    // Champs CRM — défauts (seront écrasés par l'état localStorage)
     status:        'prospect',
     priorité:      'moyenne',
     vendeur:       '',
-    qualification: gamme,           // pré-rempli avec la gamme choisie par le lead
+    qualification: gamme,
     notes:         '',
     issueAppel:    '',
     rdvDate:       '',
@@ -57,6 +69,7 @@ function fromRow(row) {
     archivedFrom:  null,
     archivedAt:    null,
     updatedAt:     null,
+    prochainRdv:   '',
   }
 }
 
@@ -124,7 +137,7 @@ export const api = {
 
       const { data, error } = await supabase
         .from('Leads')
-        .select('id, full_name, phone_number, email, post_code, created_time, lead_status, ad_name, campaign_name, "quelle_gamme_triumph_vous_intéresse_?"')
+        .select('*')   // select * évite les problèmes d'encodage des noms de colonnes spéciaux
         .order('created_time', { ascending: false })
 
       if (error) {
@@ -134,16 +147,16 @@ export const api = {
 
       // Conversion + fusion avec l'état CRM existant
       let newCount = 0
-      const supabaseLeads = (data ?? []).map(row => {
-        const base     = fromRow(row)
-        const existing = existingMap[base.id]
-        if (!existing) newCount++
-        return mergeWithCrm(base, existing ?? null)
-      })
+      const supabaseLeads = (data ?? [])
+        .map(row => fromRow(row))
+        .filter(Boolean)  // élimine les lignes qui auraient causé une erreur de conversion
+        .map(base => {
+          const crmState = existingMap[base.id]
+          if (!crmState) newCount++
+          return mergeWithCrm(base, crmState ?? null)
+        })
 
-      // ⚠️ On remplace le localStorage par les leads Supabase uniquement
-      // (évite de garder les données de démo du fichier JSON)
-      if (newCount > 0) console.log(`[Supabase] 🆕 ${newCount} nouveau(x) lead(s) Facebook importé(s)`)
+      if (newCount > 0) console.log(`[Supabase] 🆕 ${newCount} nouveau(x) lead(s) importé(s)`)
       console.log(`[Supabase] ✅ ${supabaseLeads.length} leads depuis Supabase`)
 
       lsWrite(supabaseLeads)
