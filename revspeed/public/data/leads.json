@@ -1,0 +1,74 @@
+[
+  {
+    "id": "lead-001",
+    "nom": "Thomas Renaud",
+    "tel": "0798765432",
+    "codePostal": "69003",
+    "email": "t.renaud@renaud-solutions.com",
+    "status": "prospect",
+    "priorité": "haute"
+  },
+  {
+    "id": "lead-002",
+    "nom": "Sophie Marchand",
+    "tel": "0612345678",
+    "codePostal": "75008",
+    "email": "s.marchand@innova-corp.fr",
+    "status": "prospect",
+    "priorité": "moyenne"
+  },
+  {
+    "id": "lead-003",
+    "nom": "Julien Leroux",
+    "tel": "0654321098",
+    "codePostal": "44000",
+    "email": "j.leroux@lerouxdev.fr",
+    "status": "contact",
+    "priorité": "haute"
+  },
+  {
+    "id": "lead-004",
+    "nom": "Nadia Bensalem",
+    "tel": "0677889900",
+    "codePostal": "13001",
+    "email": "n.bensalem@studio-nb.com",
+    "status": "contact",
+    "priorité": "basse"
+  },
+  {
+    "id": "lead-005",
+    "nom": "Isabelle Fontaine",
+    "tel": "0655443322",
+    "codePostal": "33000",
+    "email": "ifontaine@bxl-digital.fr",
+    "status": "devis",
+    "priorité": "haute"
+  },
+  {
+    "id": "lead-006",
+    "nom": "Romain Petit",
+    "tel": "0611223344",
+    "codePostal": "59000",
+    "email": "r.petit@petitconseil.fr",
+    "status": "négociation",
+    "priorité": "moyenne"
+  },
+  {
+    "id": "lead-007",
+    "nom": "Camille Bertrand",
+    "tel": "0777889900",
+    "codePostal": "06000",
+    "email": "c.bertrand@cb-conseil.io",
+    "status": "gagné",
+    "priorité": "haute"
+  },
+  {
+    "id": "lead-008",
+    "nom": "Marc Duval",
+    "tel": "0611223399",
+    "codePostal": "31000",
+    "email": "marc.duval@duval-btp.fr",
+    "status": "perdu",
+    "priorité": "basse"
+  }
+]
