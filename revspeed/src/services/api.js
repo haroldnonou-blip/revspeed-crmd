@@ -133,15 +133,13 @@ export const api = {
     const existingMap = Object.fromEntries(existing.map(l => [l.id, l]))
 
     if (SUPABASE_ENABLED) {
-      console.log('[Supabase] 📥 Récupération des leads Facebook…')
-
       const { data, error } = await supabase
         .from('Leads')
         .select('*')   // select * évite les problèmes d'encodage des noms de colonnes spéciaux
         .order('created_time', { ascending: false })
 
       if (error) {
-        console.error('[Supabase] ❌ Erreur lecture:', error.message, '→ fallback localStorage')
+        if (import.meta.env.DEV) console.error('[Supabase] Erreur lecture:', error.message)
         return existing
       }
 
@@ -156,8 +154,7 @@ export const api = {
           return mergeWithCrm(base, crmState ?? null)
         })
 
-      if (newCount > 0) console.log(`[Supabase] 🆕 ${newCount} nouveau(x) lead(s) importé(s)`)
-      console.log(`[Supabase] ✅ ${supabaseLeads.length} leads depuis Supabase`)
+      if (import.meta.env.DEV && newCount > 0) console.log(`[Supabase] ${newCount} nouveau(x) lead(s)`)
 
       lsWrite(supabaseLeads)
 
@@ -239,8 +236,7 @@ export const api = {
   },
 }
 
-console.info(
-  SUPABASE_ENABLED
-    ? '[RevSpeed] 🟢 Source : Supabase → leads Facebook importés automatiquement'
-    : '[RevSpeed] 🟡 Source : localStorage (configurer VITE_SUPABASE_URL pour activer Supabase)'
-)
+// Logs dev uniquement
+if (import.meta.env.DEV) {
+  console.info(SUPABASE_ENABLED ? '[RevSpeed] Source : Supabase' : '[RevSpeed] Source : localStorage')
+}

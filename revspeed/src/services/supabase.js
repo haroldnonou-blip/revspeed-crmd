@@ -9,8 +9,11 @@ export const supabase = SUPABASE_ENABLED
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null
 
-console.info(
-  SUPABASE_ENABLED
-    ? '[Supabase] ✅ Connecté → ' + SUPABASE_URL
-    : '[Supabase] ⚠️ Variables manquantes — localStorage actif'
-)
+// Log uniquement en développement — jamais en production
+if (import.meta.env.DEV) {
+  console.info(
+    SUPABASE_ENABLED
+      ? '[Supabase] ✅ Connecté (dev)'
+      : '[Supabase] ⚠️ Variables manquantes — localStorage actif'
+  )
+}
