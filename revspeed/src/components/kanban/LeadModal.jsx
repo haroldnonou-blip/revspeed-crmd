@@ -98,6 +98,45 @@ export default function LeadModal({ lead, onSave, onArchive, onClose }) {
         {/* ─── BODY (scrollable) ───────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto">
 
+          {/* ── 0. Données Facebook (lecture seule) ── */}
+          {(lead.projet || lead.delai || lead.budget || lead.campagne || lead.adName || lead.leadStatus) && (
+            <Section>
+              <SectionTitle color="#1877F2" icon="📋">INFOS LEAD FACEBOOK</SectionTitle>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                {lead.projet && (
+                  <div className="col-span-2 bg-blue-50 rounded-xl px-3 py-2">
+                    <span className="text-[10px] font-semibold text-blue-400 uppercase tracking-wide">Projet</span>
+                    <p className="text-sm font-semibold text-blue-900 mt-0.5">{lead.projet}</p>
+                  </div>
+                )}
+                {lead.delai && (
+                  <div className="bg-orange-50 rounded-xl px-3 py-2">
+                    <span className="text-[10px] font-semibold text-orange-400 uppercase tracking-wide">Délai</span>
+                    <p className="text-sm font-semibold text-orange-900 mt-0.5">{lead.delai}</p>
+                  </div>
+                )}
+                {lead.budget && (
+                  <div className="bg-green-50 rounded-xl px-3 py-2">
+                    <span className="text-[10px] font-semibold text-green-500 uppercase tracking-wide">Budget</span>
+                    <p className="text-sm font-semibold text-green-900 mt-0.5">{lead.budget}</p>
+                  </div>
+                )}
+                {lead.campagne && (
+                  <div className="col-span-2 bg-slate-50 rounded-xl px-3 py-2">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Campagne</span>
+                    <p className="text-sm text-slate-700 mt-0.5">{lead.campagne}</p>
+                  </div>
+                )}
+                {lead.adName && (
+                  <div className="col-span-2 bg-slate-50 rounded-xl px-3 py-2">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Publicité</span>
+                    <p className="text-sm text-slate-700 mt-0.5">{lead.adName}</p>
+                  </div>
+                )}
+              </div>
+            </Section>
+          )}
+
           {/* ── 1. Qualification du besoin ── */}
           <Section>
             <SectionTitle color="#7d2ae8" icon="✅">QUALIFICATION DU BESOIN</SectionTitle>
