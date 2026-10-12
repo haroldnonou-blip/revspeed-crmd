@@ -47,7 +47,7 @@ export function useLeads() {
           }))
           setLeads(migrated)
           setLoading(false)
-          console.info(`[useLeads] ${migrated.length} leads chargés depuis api.getLeads()`)
+          if (import.meta.env.DEV) console.info(`[useLeads] ${migrated.length} leads chargés depuis api.getLeads()`)
           return
         }
 
@@ -60,7 +60,7 @@ export function useLeads() {
         await api.saveLeads(stamped)
         setLeads(stamped)
         setLoading(false)
-        console.info(`[useLeads] ${stamped.length} leads chargés depuis leads.json`)
+        if (import.meta.env.DEV) console.info(`[useLeads] ${stamped.length} leads chargés depuis leads.json`)
 
       } catch (err) {
         setError(err.message)
@@ -97,7 +97,7 @@ export function useLeads() {
         const freshSig   = JSON.stringify(fresh)
         if (currentSig !== freshSig) {
           setLeads(fresh)
-          console.debug('[useLeads] sync localStorage — données mises à jour')
+          if (import.meta.env.DEV) console.debug('[useLeads] sync localStorage — données mises à jour')
         }
       } finally {
         isLoadingRef.current = false
@@ -117,7 +117,7 @@ export function useLeads() {
      * → évite la boucle : setLeads → saveLeads → event → setLeads → …
      */
     function onLeadsUpdated(e) {
-      console.debug('[useLeads] leadsUpdated reçu', e.detail?.action)
+      if (import.meta.env.DEV) console.debug('[useLeads] leadsUpdated reçu', e.detail?.action)
       scheduleSync()
     }
 
@@ -127,7 +127,7 @@ export function useLeads() {
      */
     function onStorageChange(e) {
       if (e.key === null || e.key.startsWith('revspeed')) {
-        console.debug('[useLeads] storage cross-tab reçu', e.key)
+        if (import.meta.env.DEV) console.debug('[useLeads] storage cross-tab reçu', e.key)
         scheduleSync()
       }
     }
@@ -290,7 +290,7 @@ export function useLeads() {
       setImportFilters(filters)
       setLeads(filtered)
 
-      console.info(`[useLeads] refreshWithFilters → ${filtered.length} leads chargés`, filters)
+      if (import.meta.env.DEV) console.info(`[useLeads] refreshWithFilters → ${filtered.length} leads chargés`, filters)
     } catch (err) {
       setError(err.message)
     } finally {

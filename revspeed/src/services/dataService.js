@@ -88,14 +88,13 @@ export async function fetchLeads({ status = null, startDate = null, endDate = nu
     const activeFilters = [status && `statut=${status}`, startDate && `depuis=${startDate}`, endDate && `jusqu'au=${endDate}`]
       .filter(Boolean).join(', ')
 
-    console.info(
-      `[DataService] ${leads.length} leads chargés depuis ${DATA_URL}` +
-      (activeFilters ? ` [${activeFilters}]` : '')
-    )
+    if (import.meta.env.DEV) {
+      console.info(`[DataService] ${leads.length} leads chargés` + (activeFilters ? ` [${activeFilters}]` : ''))
+    }
     return leads
 
   } catch (error) {
-    console.error('[DataService] Échec du chargement des leads :', error.message)
+    if (import.meta.env.DEV) console.error('[DataService] Échec du chargement des leads :', error.message)
     throw error
   }
 }
