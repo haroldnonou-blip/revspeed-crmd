@@ -1,49 +1,44 @@
 /**
  * RevSpeed — Service API
  * ──────────────────────────────────────────────────────────────────────────
- * Workflow :
- *   1. LECTURE  → Supabase "Leads" (source Facebook Lead Ads)
- *   2. FUSION   → merge avec l'état CRM stocké en localStorage
- *   3. GESTION  → toutes les actions CRM (status, vendeur, notes, RDV)
- *                 sont sauvegardées en localStorage uniquement
+ * Sources de données (par ordre de priorité) :
+ *   1. Google Apps Script (GAS) → leads Facebook depuis le Google Sheet client
+ *   2. Supabase                 → fallback legacy
+ *   3. localStorage             → mode offline / fallback final
  *
- * Résultat : aucune modification de la table Supabase nécessaire.
- * Les nouveaux leads Facebook apparaissent automatiquement au démarrage.
+ * L'état CRM (status, vendeur, notes, RDV) est toujours persisté :
+ *   - En local via localStorage (immédiat, offline-first)
+ *   - En remote via GAS/Supabase (sync asynchrone)
  * ──────────────────────────────────────────────────────────────────────────
  */
 
 import { supabase, SUPABASE_ENABLED } from './supabase'
 
+// ── Configuration ────────────────────────────────────────────────────────────
+const GAS_ENDPOINT  = import.meta.env.VITE_GAS_ENDPOINT  ?? ''
+const GAS_TOKEN     = import.meta.env.VITE_GAS_TOKEN     ?? ''
+const GAS_ENABLED   = !!GAS_ENDPOINT
+
 // ── Clés localStorage ────────────────────────────────────────────────────────
-const LS_KEY      = '***'           // leads complets (merge Supabase + CRM)
-const LEGACY_KEYS = ['revspeed_leads', 'revspeed_leads_v1']
+const LS_KEY      = 'revspeed_v2'
+const LEGACY_KEYS = ['***', 'revspeed_leads', 'revspeed_leads_v1']
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MAPPING  Supabase → App
-// Colonnes réelles de la table "Leads" (export Facebook Lead Ads)
+// MAPPING  Supabase → App (legacy)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function fromRow(row) {
+function fromSupabaseRow(row) {
   if (!row || typeof row !== 'object') return null
-
-  // Nettoyer les préfixes Facebook : p: (téléphone), z: (code postal)
   const tel   = String(row.phone_number ?? '').replace(/^p:/, '').trim()
   const cp    = String(row.post_code    ?? '').replace(/^z:/, '').trim()
-
-  // La colonne gamme peut avoir différents noms selon la version de la table
   const gamme = String(
-    row['quelle_gamme_triumph_vous_intéresse_?'] ??
-    row['quelle_gamme_triumph_vous_intéresse_?'] ??
-    row.gamme ?? ''
+    row['quelle_gamme_triumph_vous_intéresse_?'] ?? row.gamme ?? ''
   ).trim()
-
-  // Sécuriser createdAt
   let createdAt = Date.now()
   try {
     if (row.created_time) createdAt = new Date(row.created_time).getTime()
     else if (row.created_at) createdAt = new Date(row.created_at).getTime()
   } catch (_) {}
-
   return {
     id:            String(row.id ?? crypto.randomUUID()),
     nom:           String(row.full_name ?? '').trim(),
@@ -55,7 +50,6 @@ function fromRow(row) {
     adName:        row.ad_name       ?? null,
     campaignName:  row.campaign_name ?? null,
     gamme,
-    // Champs CRM — défauts (seront écrasés par l'état localStorage)
     status:        'prospect',
     priorité:      'moyenne',
     vendeur:       '',
@@ -91,11 +85,16 @@ function dispatch(action) {
 }
 
 function lsRead() {
+  // Migrer depuis les anciennes clés si nécessaire
   let raw = localStorage.getItem(LS_KEY)
   if (!raw) {
     for (const k of LEGACY_KEYS) {
       raw = localStorage.getItem(k)
-      if (raw) { localStorage.setItem(LS_KEY, raw); LEGACY_KEYS.forEach(lk => localStorage.removeItem(lk)); break }
+      if (raw) {
+        localStorage.setItem(LS_KEY, raw)
+        LEGACY_KEYS.forEach(lk => localStorage.removeItem(lk))
+        break
+      }
     }
   }
   try { return raw ? JSON.parse(raw) : null } catch { return null }
@@ -103,22 +102,48 @@ function lsRead() {
 
 function lsWrite(leads) { localStorage.setItem(LS_KEY, JSON.stringify(leads)) }
 
-// Champs CRM gérés localement (ne viennent PAS de Supabase)
 const CRM_FIELDS = ['status','priorité','vendeur','qualification','notes',
   'issueAppel','rdvDate','rdvTime','rdvType','rdvDuration',
-  'archivedFrom','archivedAt','updatedAt']
+  'archivedFrom','archivedAt','updatedAt','prochainRdv']
 
-/** Fusionne un lead Supabase avec l'état CRM du localStorage */
-function mergeWithCrm(supabaseLead, existing) {
-  if (!existing) return supabaseLead
+function mergeWithCrm(remoteLead, existing) {
+  if (!existing) return remoteLead
   const crm = {}
   for (const f of CRM_FIELDS) {
-    // Prend la valeur CRM si elle est définie (non vide / non nulle)
     if (existing[f] !== undefined && existing[f] !== '' && existing[f] !== null) {
       crm[f] = existing[f]
     }
   }
-  return { ...supabaseLead, ...crm }
+  return { ...remoteLead, ...crm }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SOURCE : Google Apps Script
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function fetchFromGAS() {
+  const url = GAS_TOKEN
+    ? `${GAS_ENDPOINT}?token=${encodeURIComponent(GAS_TOKEN)}`
+    : GAS_ENDPOINT
+
+  const res  = await fetch(url)
+  if (!res.ok) throw new Error(`GAS HTTP ${res.status}`)
+  const json = await res.json()
+  if (!json.ok) throw new Error(`GAS error: ${json.error}`)
+  return json.data  // tableau de leads normalisés
+}
+
+async function pushToGAS(action, payload) {
+  if (!GAS_ENABLED) return
+  try {
+    await fetch(GAS_ENDPOINT, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ token: GAS_TOKEN, action, ...payload }),
+    })
+  } catch (e) {
+    if (import.meta.env.DEV) console.warn('[GAS] push failed:', e.message)
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -132,44 +157,59 @@ export const api = {
     const existing    = lsRead() ?? []
     const existingMap = Object.fromEntries(existing.map(l => [l.id, l]))
 
-    if (SUPABASE_ENABLED) {
-      const { data, error } = await supabase
-        .from('Leads')
-        .select('*')   // select * évite les problèmes d'encodage des noms de colonnes spéciaux
-        .order('created_time', { ascending: false })
-
-      if (error) {
-        if (import.meta.env.DEV) console.error('[Supabase] Erreur lecture:', error.message)
-        return existing
-      }
-
-      // Conversion + fusion avec l'état CRM existant
-      let newCount = 0
-      const supabaseLeads = (data ?? [])
-        .map(row => fromRow(row))
-        .filter(Boolean)  // élimine les lignes qui auraient causé une erreur de conversion
-        .map(base => {
+    // ── Source 1 : Google Apps Script ────────────────────────────────────────
+    if (GAS_ENABLED) {
+      try {
+        const gasLeads = await fetchFromGAS()
+        let newCount = 0
+        const merged = gasLeads.map(base => {
           const crmState = existingMap[base.id]
           if (!crmState) newCount++
           return mergeWithCrm(base, crmState ?? null)
         })
-
-      if (import.meta.env.DEV && newCount > 0) console.log(`[Supabase] ${newCount} nouveau(x) lead(s)`)
-
-      lsWrite(supabaseLeads)
-
-      return filter === 'today'
-        ? supabaseLeads.filter(l => isToday(l.createdAt))
-        : supabaseLeads
+        if (import.meta.env.DEV && newCount > 0)
+          console.log(`[GAS] ${newCount} nouveau(x) lead(s)`)
+        lsWrite(merged)
+        return filter === 'today' ? merged.filter(l => isToday(l.createdAt)) : merged
+      } catch (e) {
+        if (import.meta.env.DEV) console.warn('[GAS] fallback localStorage:', e.message)
+      }
     }
 
-    // Mode localStorage pur
+    // ── Source 2 : Supabase (legacy) ──────────────────────────────────────────
+    if (SUPABASE_ENABLED) {
+      const { data, error } = await supabase
+        .from('Leads')
+        .select('*')
+        .order('created_time', { ascending: false })
+
+      if (!error) {
+        let newCount = 0
+        const merged = (data ?? [])
+          .map(row => fromSupabaseRow(row))
+          .filter(Boolean)
+          .map(base => {
+            const crmState = existingMap[base.id]
+            if (!crmState) newCount++
+            return mergeWithCrm(base, crmState ?? null)
+          })
+        if (import.meta.env.DEV && newCount > 0)
+          console.log(`[Supabase] ${newCount} nouveau(x) lead(s)`)
+        lsWrite(merged)
+        return filter === 'today' ? merged.filter(l => isToday(l.createdAt)) : merged
+      }
+      if (import.meta.env.DEV) console.warn('[Supabase] fallback localStorage')
+    }
+
+    // ── Source 3 : localStorage pur ───────────────────────────────────────────
     return filter === 'today' ? existing.filter(l => isToday(l.createdAt)) : existing
   },
 
-  // ── saveLeads — auto-persist React → localStorage ──────────────────────────
+  // ── saveLeads — auto-persist React → localStorage (+ sync GAS async) ───────
   async saveLeads(leads) {
     lsWrite(leads)
+    // Sync vers GAS en arrière-plan (sans bloquer l'UI)
+    pushToGAS('saveAll', { leads })
     return leads
   },
 
@@ -183,26 +223,26 @@ export const api = {
       const t = lead.tel.replace(/\D/g, '')
       if (t.length >= 8) idx = current.findIndex(l => l.tel?.replace(/\D/g, '') === t)
     }
-    let merged = false
     if (idx >= 0) {
       current[idx] = { ...current[idx], ...lead, id: current[idx].id, createdAt: current[idx].createdAt, updatedAt: Date.now() }
-      merged = true
     } else {
       current.push({ id: lead.id ?? crypto.randomUUID(), createdAt: lead.createdAt ?? Date.now(), ...lead })
     }
     lsWrite(current)
     const saved = idx >= 0 ? current[idx] : current[current.length - 1]
+    pushToGAS('updateLead', { lead: saved })
     dispatch('saveLead')
-    return { lead: saved, merged }
+    return { lead: saved, merged: idx >= 0 }
   },
 
-  // ── updateLead — sauvegarder les actions CRM ───────────────────────────────
+  // ── updateLead ─────────────────────────────────────────────────────────────
   async updateLead(leadId, updates) {
     const current = lsRead() ?? []
     const idx = current.findIndex(l => l.id === leadId)
     if (idx < 0) return null
     current[idx] = { ...current[idx], ...updates, updatedAt: Date.now() }
     lsWrite(current)
+    pushToGAS('updateLead', { lead: current[idx] })
     dispatch('updateLead')
     return current[idx]
   },
@@ -219,6 +259,7 @@ export const api = {
       archivedAt:   Date.now(),
     }
     lsWrite(current)
+    pushToGAS('updateLead', { lead: current[idx] })
     dispatch('archiveLead')
     return current[idx]
   },
@@ -229,14 +270,17 @@ export const api = {
     dispatch('deleteLead')
   },
 
-  // ── clearAll — réinitialiser (recharge les leads Supabase au prochain load) ─
+  // ── clearAll ───────────────────────────────────────────────────────────────
   async clearAll() {
     localStorage.removeItem(LS_KEY)
     LEGACY_KEYS.forEach(k => localStorage.removeItem(k))
   },
 }
 
-// Logs dev uniquement
 if (import.meta.env.DEV) {
-  console.info(SUPABASE_ENABLED ? '[RevSpeed] Source : Supabase' : '[RevSpeed] Source : localStorage')
+  console.info(
+    GAS_ENABLED      ? '[RevSpeed] Source : Google Apps Script' :
+    SUPABASE_ENABLED ? '[RevSpeed] Source : Supabase' :
+                       '[RevSpeed] Source : localStorage'
+  )
 }
