@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { STATUS_LABELS, PIPELINE_ORDER, PRIORITIES, PRIORITY_COLORS } from '../../constants/statuses'
-import { VENDEURS, ISSUES_APPEL } from '../../constants/vendeurs'
+import { ISSUES_APPEL } from '../../constants/vendeurs'
+import { loadSettings, applyTemplate } from '../../hooks/useSettings'
 import { getInitials } from '../../utils/formatters'
 
 /**
@@ -23,6 +24,7 @@ import { getInitials } from '../../utils/formatters'
 export default function LeadModal({ lead, onSave, onArchive, onClose }) {
   const [form, setForm] = useState(buildForm(lead))
   const [saved, setSaved] = useState(false)
+  const settings = loadSettings()
 
   // ── Sync si lead change ────────────────────────────────────────────────
   useEffect(() => {
@@ -52,10 +54,13 @@ export default function LeadModal({ lead, onSave, onArchive, onClose }) {
   const rawTel      = (form.tel || '').replace(/\D/g, '')
   const rawEmail    = form.email || ''
   const intlTel     = toIntlPhone(rawTel)
-  const templateMsg = buildTemplateMessage(form.nom || lead.nom)
+  const templateMsg = buildTemplateMessage(form.nom || lead.nom, settings)
   const smsLink     = rawTel   ? `sms:${rawTel}?body=${encodeURIComponent(templateMsg)}`                         : undefined
   const waLink      = intlTel  ? `https://wa.me/${intlTel}?text=${encodeURIComponent(templateMsg)}`              : undefined
-  const emailLink   = rawEmail ? `mailto:${rawEmail}?subject=${encodeURIComponent('Votre projet Moto – Triumph Moto Livry-Gargan')}&body=${encodeURIComponent(templateMsg)}` : undefined
+  const emailSubject = settings?.templateEmail?.[0]?.sujet
+    ? applyTemplate(settings.templateEmail[0].sujet, { prenom: (form.nom||'').split(' ')[0], commercial: settings.nomCommercial, concessionnaire: settings.nomConcessionnaire })
+    : `Votre projet Moto – ${settings?.nomConcessionnaire ?? 'Honda Renneville'}`
+  const emailLink   = rawEmail ? `mailto:${rawEmail}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(templateMsg)}` : undefined
 
   return (
     <div className="fixed inset-0 z-50 flex">
@@ -178,7 +183,7 @@ export default function LeadModal({ lead, onSave, onArchive, onClose }) {
             <SectionTitle icon="🧑‍💼">VENDEUR EN CHARGE :</SectionTitle>
             <select name="vendeur" value={form.vendeur} onChange={handleChange} className={selectClass}>
               <option value="">— Choisir un vendeur —</option>
-              {VENDEURS.filter(Boolean).map((v) => (
+              {settings.vendeurs.filter(Boolean).map((v) => (
                 <option key={v} value={v}>{v}</option>
               ))}
             </select>
@@ -483,20 +488,25 @@ function toIntlPhone(rawTel) {
   return rawTel
 }
 
-/** Construit le message template avec le prénom du client */
-function buildTemplateMessage(nom) {
+/** Construit le message template avec le prénom du client et les settings */
+function buildTemplateMessage(nom, settings) {
   const prenom = nom ? nom.trim().split(/\s+/)[0] : ''
-  return [
-    `Bonjour ${prenom},`,
+  const template = settings?.templateSMS?.[0] ?? [
+    "Bonjour {prenom},",
     '',
-    "C'est Max de Triumph Moto Livry-Gargan.",
+    "C'est {commercial} de {concessionnaire}.",
     '',
-    "J'ai essayé de vous joindre \u00e0 l'instant sans succ\u00e8s.",
+    "J'ai essayé de vous joindre à l'instant sans succès.",
     '',
-    'Je fais suite \u00e0 votre demande pour votre projet Moto.',
+    'Je fais suite à votre demande pour votre projet Moto.',
     '',
     'Quand seriez-vous joignable ? Bonne journée !',
   ].join('\n')
+  return applyTemplate(template, {
+    prenom,
+    commercial:      settings?.nomCommercial      ?? 'Max',
+    concessionnaire: settings?.nomConcessionnaire ?? 'Honda Renneville',
+  })
 }
 
 

@@ -38,6 +38,7 @@ import Dashboard from './components/dashboard/DashboardTriumph'
 import ArchivesView from './components/archives/ArchivesView'
 import FilterBar from './components/filters/FilterBar'
 import PlanningView from './components/planning/PlanningView'
+import SettingsView from './components/settings/SettingsView'
 
 /**
  * RevSpeed — App.jsx (Itération 7 Pro)
@@ -261,6 +262,9 @@ export default function App() {
         <TabBtn active={activeTab === 'planning'} onClick={() => setActiveTab('planning')}>
           📅 Planning
         </TabBtn>
+        <TabBtn active={activeTab === 'settings'} onClick={() => setActiveTab('settings')}>
+          ⚙️ Paramètres
+        </TabBtn>
       </nav>
 
       {/* ─── FILTER BAR (Pipeline uniquement) ────────────────────────────── */}
@@ -278,7 +282,7 @@ export default function App() {
       )}
 
       {/* ─── CONTENU ─────────────────────────────────────────────────────── */}
-      <main className={`flex-1 ${activeTab === 'pipeline' ? 'overflow-x-auto p-6' : 'overflow-y-auto'}`} key={activeTab}>
+      <main className={`flex-1 ${activeTab === 'pipeline' ? 'overflow-x-auto p-6' : 'overflow-y-auto bg-slate-50'}`} key={activeTab}>
 
         {activeTab === 'dashboard' && (
           <Dashboard
@@ -308,6 +312,10 @@ export default function App() {
 
         {activeTab === 'planning' && (
           <PlanningView />
+        )}
+
+        {activeTab === 'settings' && (
+          <SettingsView />
         )}
 
       </main>
