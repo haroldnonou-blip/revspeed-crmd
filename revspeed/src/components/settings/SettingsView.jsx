@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'react'
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from '../../hooks/useSettings'
+import { api } from '../../services/api'
 
 // ── Composants UI réutilisables ───────────────────────────────────────────────
 
@@ -79,6 +80,31 @@ export default function SettingsView() {
   const [settings, setSettings] = useState(() => loadSettings())
   const [saved,    setSaved]    = useState(false)
   const [newVendeur, setNewVendeur] = useState('')
+
+  // Sync GAS
+  const [syncState, setSyncState] = useState('idle') // 'idle' | 'loading' | 'ok' | 'error'
+  const [syncMsg,   setSyncMsg]   = useState('')
+
+  async function handleSyncToGAS() {
+    setSyncState('loading')
+    setSyncMsg('')
+    try {
+      const raw = localStorage.getItem('revspeed_v2')
+      const leads = raw ? JSON.parse(raw) : []
+      if (!leads.length) {
+        setSyncState('error')
+        setSyncMsg('Aucune donnée trouvée dans ce navigateur.')
+        return
+      }
+      await api.saveLeads(leads)
+      setSyncState('ok')
+      setSyncMsg(`✓ ${leads.length} leads synchronisés vers Google Sheets`)
+    } catch (e) {
+      setSyncState('error')
+      setSyncMsg('Erreur : ' + e.message)
+    }
+    setTimeout(() => setSyncState('idle'), 5000)
+  }
 
   // SMS templates
   const [newSMS, setNewSMS] = useState('')
@@ -402,6 +428,39 @@ export default function SettingsView() {
             </button>
           </div>
           <p className="text-[11px] text-slate-400 mt-1">Si renseigné, l'app demandera ce mot de passe au démarrage</p>
+        </div>
+      </SectionCard>
+
+      {/* ─── 7. Synchronisation ─────────────────────────────────────────── */}
+      <SectionCard title="Synchronisation" icon="☁️">
+        <div>
+          <p className="text-sm text-slate-600 mb-3">
+            Pousse toutes les données de <strong>ce navigateur</strong> vers Google Sheets, pour les rendre disponibles sur tous les autres appareils.
+          </p>
+          <p className="text-xs text-slate-400 mb-4 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+            ⚠️ À utiliser une seule fois depuis le navigateur qui contient vos données (Harold : depuis ton Mac/Chrome).
+          </p>
+          <button
+            onClick={handleSyncToGAS}
+            disabled={syncState === 'loading'}
+            className={`w-full py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+              syncState === 'loading' ? 'bg-slate-200 text-slate-400 cursor-wait' :
+              syncState === 'ok'      ? 'bg-emerald-600 text-white' :
+              syncState === 'error'   ? 'bg-red-100 text-red-700 border border-red-200' :
+                                        'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'
+            }`}
+          >
+            {syncState === 'loading' && <span className="animate-spin">⟳</span>}
+            {syncState === 'loading' ? 'Synchronisation en cours…' :
+             syncState === 'ok'      ? '✓ Synchronisé !' :
+             syncState === 'error'   ? '✗ Erreur' :
+                                       '☁️ Synchroniser vers Google Sheets'}
+          </button>
+          {syncMsg && (
+            <p className={`text-xs mt-2 text-center font-medium ${syncState === 'ok' ? 'text-emerald-600' : 'text-red-500'}`}>
+              {syncMsg}
+            </p>
+          )}
         </div>
       </SectionCard>
 
