@@ -108,13 +108,36 @@ const CRM_FIELDS = ['status','priorité','vendeur','qualification','notes',
 
 function mergeWithCrm(remoteLead, existing) {
   if (!existing) return remoteLead
-  const crm = {}
-  for (const f of CRM_FIELDS) {
-    if (existing[f] !== undefined && existing[f] !== '' && existing[f] !== null) {
-      crm[f] = existing[f]
+
+  // Si GAS a un updatedAt plus récent (ou si local n'a pas de updatedAt),
+  // les données GAS ont priorité — elles viennent d'un autre navigateur.
+  const gasTs   = remoteLead.updatedAt ?? 0
+  const localTs = existing.updatedAt   ?? 0
+
+  if (gasTs >= localTs) {
+    // GAS est plus récent : on prend tout de GAS, sauf si GAS est vide sur un champ
+    const crm = {}
+    for (const f of CRM_FIELDS) {
+      const gasVal   = remoteLead[f]
+      const localVal = existing[f]
+      // Prend GAS si non vide, sinon local en fallback
+      if (gasVal !== undefined && gasVal !== '' && gasVal !== null) {
+        crm[f] = gasVal
+      } else if (localVal !== undefined && localVal !== '' && localVal !== null) {
+        crm[f] = localVal
+      }
     }
+    return { ...remoteLead, ...crm }
+  } else {
+    // Local est plus récent : on garde les données locales
+    const crm = {}
+    for (const f of CRM_FIELDS) {
+      if (existing[f] !== undefined && existing[f] !== '' && existing[f] !== null) {
+        crm[f] = existing[f]
+      }
+    }
+    return { ...remoteLead, ...crm }
   }
-  return { ...remoteLead, ...crm }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -135,12 +158,20 @@ async function fetchFromGAS() {
 
 async function pushToGAS(action, payload) {
   if (!GAS_ENABLED) return
+  // IMPORTANT : Content-Type text/plain → requête "simple" sans preflight CORS.
+  // Apps Script ne répond pas aux requêtes OPTIONS ; avec application/json le
+  // navigateur déclenche un preflight qui échoue et bloque tout POST.
+  // Le corps reste du JSON, parsé côté GAS via e.postData.contents.
   try {
-    await fetch(GAS_ENDPOINT, {
+    const res = await fetch(GAS_ENDPOINT, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body:    JSON.stringify({ token: GAS_TOKEN, action, ...payload }),
     })
+    if (import.meta.env.DEV) {
+      const txt = await res.text()
+      console.log('[GAS] push', action, '→', res.status, txt.slice(0, 120))
+    }
   } catch (e) {
     if (import.meta.env.DEV) console.warn('[GAS] push failed:', e.message)
   }
@@ -161,8 +192,17 @@ export const api = {
     if (GAS_ENABLED) {
       try {
         const gasLeads = await fetchFromGAS()
+
+        // GARDE-FOU : si GAS renvoie vide mais qu'on a des données locales,
+        // on NE PART PAS de zéro (sinon on efface le travail de l'utilisateur
+        // à chaque chargement tant que le Sheet n'est pas encore alimenté).
+        if ((!gasLeads || gasLeads.length === 0) && existing.length > 0) {
+          if (import.meta.env.DEV) console.warn('[GAS] vide → on garde localStorage (pas d\'écrasement)')
+          return filter === 'today' ? existing.filter(l => isToday(l.createdAt)) : existing
+        }
+
         let newCount = 0
-        const merged = gasLeads.map(base => {
+        const merged = (gasLeads ?? []).map(base => {
           const crmState = existingMap[base.id]
           if (!crmState) newCount++
           return mergeWithCrm(base, crmState ?? null)
