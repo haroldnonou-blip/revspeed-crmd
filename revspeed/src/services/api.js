@@ -108,36 +108,17 @@ const CRM_FIELDS = ['status','priorité','vendeur','qualification','notes',
 
 function mergeWithCrm(remoteLead, existing) {
   if (!existing) return remoteLead
-
-  // Si GAS a un updatedAt plus récent (ou si local n'a pas de updatedAt),
-  // les données GAS ont priorité — elles viennent d'un autre navigateur.
-  const gasTs   = remoteLead.updatedAt ?? 0
-  const localTs = existing.updatedAt   ?? 0
-
-  if (gasTs >= localTs) {
-    // GAS est plus récent : on prend tout de GAS, sauf si GAS est vide sur un champ
-    const crm = {}
-    for (const f of CRM_FIELDS) {
-      const gasVal   = remoteLead[f]
-      const localVal = existing[f]
-      // Prend GAS si non vide, sinon local en fallback
-      if (gasVal !== undefined && gasVal !== '' && gasVal !== null) {
-        crm[f] = gasVal
-      } else if (localVal !== undefined && localVal !== '' && localVal !== null) {
-        crm[f] = localVal
-      }
+  // SÉCURITÉ : l'état CRM local non vide est TOUJOURS prioritaire.
+  // Un navigateur ne perd jamais son travail (notes, statut, vendeur) au
+  // chargement : s'il a déjà une valeur, on la garde ; sinon on prend celle
+  // du Sheet (GAS). Un nouveau navigateur (local vide) récupère donc tout GAS.
+  const crm = {}
+  for (const f of CRM_FIELDS) {
+    if (existing[f] !== undefined && existing[f] !== '' && existing[f] !== null) {
+      crm[f] = existing[f]
     }
-    return { ...remoteLead, ...crm }
-  } else {
-    // Local est plus récent : on garde les données locales
-    const crm = {}
-    for (const f of CRM_FIELDS) {
-      if (existing[f] !== undefined && existing[f] !== '' && existing[f] !== null) {
-        crm[f] = existing[f]
-      }
-    }
-    return { ...remoteLead, ...crm }
   }
+  return { ...remoteLead, ...crm }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
