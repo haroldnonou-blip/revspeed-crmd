@@ -182,14 +182,15 @@ export const api = {
           return filter === 'today' ? existing.filter(l => isToday(l.createdAt)) : existing
         }
 
-        let newCount = 0
-        const merged = (gasLeads ?? []).map(base => {
-          const crmState = existingMap[base.id]
-          if (!crmState) newCount++
-          return mergeWithCrm(base, crmState ?? null)
-        })
-        if (import.meta.env.DEV && newCount > 0)
-          console.log(`[GAS] ${newCount} nouveau(x) lead(s)`)
+        // ── SOURCE UNIQUE DE VÉRITÉ : le Google Sheet ──────────────────────────
+        // On adopte l'état CRM du Sheet TEL QUEL (statut, vendeur, notes, RDV).
+        // Un navigateur ne peut plus écraser le Sheet avec de vieilles données
+        // locales : plus de fusion, plus de conflit, plus de perte.
+        // On ajoute uniquement les leads créés localement et pas encore dans le
+        // Sheet (ils seront poussés par la prochaine sauvegarde).
+        const gasIds   = new Set((gasLeads ?? []).map(l => l.id))
+        const localOnly = existing.filter(l => !gasIds.has(l.id))
+        const merged    = [...(gasLeads ?? []), ...localOnly]
         lsWrite(merged)
         return filter === 'today' ? merged.filter(l => isToday(l.createdAt)) : merged
       } catch (e) {
