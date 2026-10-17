@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { api } from '../../services/api'
+import { cleanDictation } from '../../utils/cleanDictation'
 
 /**
  * VoiceTextarea — zone de texte avec dictée vocale + bouton "Résumer" (IA).
@@ -20,9 +20,9 @@ export default function VoiceTextarea({
   name, value, onChange, rows = 4, placeholder, className,
   summarize = false,
 }) {
-  const [listening, setListening]   = useState(false)
-  const [summarizing, setSummarizing] = useState(false)
-  const [error, setError]           = useState('')
+  const [listening, setListening] = useState(false)
+  const [cleaned, setCleaned]     = useState(false)
+  const [error, setError]         = useState('')
   const recognitionRef = useRef(null)
   const baseTextRef    = useRef('')   // texte présent au démarrage de la dictée
 
@@ -93,20 +93,15 @@ export default function VoiceTextarea({
     catch { setError('Impossible de démarrer la dictée.') }
   }
 
-  // ── Résumer via IA ────────────────────────────────────────────────────
-  async function handleSummarize() {
+  // ── Mettre au propre (local, instantané, sans IA) ─────────────────────
+  function handleSummarize() {
     const text = (value || '').trim()
-    if (!text) { setError('Rien à résumer — dicte ou écris d\'abord.'); return }
-    setError(''); setSummarizing(true)
-    try {
-      const summary = await api.summarize(text)
-      if (summary) emit(summary)
-      else setError("Le résumé n'a rien renvoyé.")
-    } catch (e) {
-      setError('Résumé indisponible : ' + (e?.message || 'erreur'))
-    } finally {
-      setSummarizing(false)
-    }
+    if (!text) { setError('Rien à mettre au propre — dicte ou écris d\'abord.'); return }
+    setError('')
+    const clean = cleanDictation(text)
+    emit(clean)
+    setCleaned(true)
+    setTimeout(() => setCleaned(false), 1800)
   }
 
   return (
@@ -142,16 +137,15 @@ export default function VoiceTextarea({
           <button
             type="button"
             onClick={handleSummarize}
-            disabled={summarizing}
             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
-              summarizing
-                ? 'bg-slate-200 text-slate-400 cursor-wait'
+              cleaned
+                ? 'bg-emerald-500 text-white'
                 : 'bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100'
             }`}
-            title="Nettoyer et résumer avec l'IA"
+            title="Mettre au propre (enlève les tics, met majuscules et ponctuation)"
           >
-            {summarizing ? <span className="animate-spin">⟳</span> : <SparkIcon />}
-            {summarizing ? 'Résumé…' : 'Résumer'}
+            {cleaned ? '✓' : <SparkIcon />}
+            {cleaned ? 'Mis au propre' : 'Mettre au propre'}
           </button>
         )}
       </div>

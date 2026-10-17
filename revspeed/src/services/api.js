@@ -298,18 +298,6 @@ export const api = {
     LEGACY_KEYS.forEach(k => localStorage.removeItem(k))
   },
 
-  // ── summarize — nettoie/structure un texte dicté via l'IA (GAS proxy) ───────
-  async summarize(text) {
-    if (!GAS_ENABLED) throw new Error('IA non configurée')
-    const res = await fetch(GAS_ENDPOINT, {
-      method:  'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body:    JSON.stringify({ token: GAS_TOKEN, action: 'summarize', text }),
-    })
-    const json = await res.json().catch(() => null)
-    if (!json || !json.ok) throw new Error(json?.error || 'réponse invalide')
-    return (json.summary || '').trim()
-  },
 }
 
 if (import.meta.env.DEV) {
