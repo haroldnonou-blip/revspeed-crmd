@@ -3,6 +3,7 @@ import { STATUS_LABELS, PIPELINE_ORDER, PRIORITIES, PRIORITY_COLORS } from '../.
 import { ISSUES_APPEL } from '../../constants/vendeurs'
 import { loadSettings, applyTemplate } from '../../hooks/useSettings'
 import { getInitials } from '../../utils/formatters'
+import VoiceTextarea from './VoiceTextarea'
 
 /**
  * LeadModal — Fiche Client Pro (panneau droit slide-in).
@@ -145,13 +146,14 @@ export default function LeadModal({ lead, onSave, onArchive, onClose }) {
           {/* ── 1. Qualification du besoin ── */}
           <Section>
             <SectionTitle color="#7d2ae8" icon="✅">QUALIFICATION DU BESOIN</SectionTitle>
-            <textarea
+            <VoiceTextarea
               name="qualification"
               value={form.qualification}
               onChange={handleChange}
               rows={4}
               placeholder={"Recherche un modèle 2023 ou 2024\nBudget cible : ~10k€\nPossibilité de reprise…"}
               className={textareaClass}
+              summarize
             />
           </Section>
 
@@ -425,13 +427,14 @@ export default function LeadModal({ lead, onSave, onArchive, onClose }) {
           {/* ── 8. Notes complémentaires ── */}
           <Section border={false}>
             <SectionTitle icon="📝">NOTES COMPLÉMENTAIRES :</SectionTitle>
-            <textarea
+            <VoiceTextarea
               name="notes"
               value={form.notes}
               onChange={handleChange}
               rows={5}
               placeholder="Suite à l'appel, le client préfère être rappelé en fin de journée…"
               className={textareaClass}
+              summarize
             />
           </Section>
 
